@@ -1,9 +1,9 @@
-# Grain-128 (C reference)
+# Grain-128 
 
 Đây là một triển khai tham khảo của bộ mã hóa dòng Grain-128 bằng C.
 
 Nội dung file `Grain128.c` bao gồm:
-- Hàm khởi tạo và sinh luồng khóa (keystream) theo spec Grain-128.
+- Hàm khởi tạo và sinh luồng khóa (keystream) theo Grain-128.
 - Một bộ test nội bộ (KAT fixtures) và các kiểm tra mẫu in ra kết quả.
 
 ## Hướng dẫn build 
