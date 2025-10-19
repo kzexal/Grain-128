@@ -171,7 +171,7 @@ int main(void){
         pass_all &= expect_eq("KAT1 KS16", ks, KAT1_KS16, sizeof(ks));
     }
 
-    // ===== Test 2: KAT2 — Sample ciphertext 24B (K/IV incremental) =====
+    // ===== Test 2: KAT2 — Khóa/IV tăng dần (chuỗi hex trong mã nguồn) =====
     {
         uint8_t K[16], IV[12];
         hex_to_bytes(KAT2_K_hex, K, 16);
@@ -213,18 +213,16 @@ int main(void){
 
         const char* message_str = "test";
         size_t message_len = strlen(message_str);
-        uint8_t pt[16]; // buffer đủ lớn
+        uint8_t pt[16]; 
         uint8_t ct[16];
         uint8_t ks[16]; // buffer cho keystream
         memcpy(pt, message_str, message_len);
 
-        // Tạo keystream để hiển thị
+        // Tạo keystream để hiển thị 
         ks_bytes(K, IV, ks, message_len);
-        
-        // Mã hóa message bằng cách XOR với keystream
-        for (size_t i = 0; i < message_len; i++) {
-            ct[i] = pt[i] ^ ks[i];
-        }
+
+        // Mã hóa message bằng hàm encrypt 
+        grain128_encrypt(K, IV, pt, ct, message_len);
 
         printf("\n--- Encrypting 'test' message ---\n");
         printf("Key:                %s\n", custom_K_hex);
@@ -232,8 +230,8 @@ int main(void){
         printf("Message:            %s\n", message_str);
         printf("Keystream (HEX):    ");
         print_hex(ks, message_len);
-          printf("\n");
-          printf("Keystream (BIN):    ");
+        printf("\n");
+        printf("Keystream (BIN):    ");
         print_binary(ks, message_len);
         printf("\n");
         printf("Message (BIN):      ");
@@ -245,6 +243,36 @@ int main(void){
         printf("Ciphertext (HEX):   ");
         print_hex(ct, message_len);
         printf("\n-----------------------------------\n");
+    }
+
+    // ===== Test 5: Giải mã ciphertext từ Test 4 và kiểm tra =====
+    {
+        const char* custom_K_hex = "0123456789abcdef123456789abcdef0";
+        const char* custom_IV_hex = "0123456789abcdef12345678";
+        uint8_t K[16], IV[12];
+        hex_to_bytes(custom_K_hex, K, 16);
+        hex_to_bytes(custom_IV_hex, IV, 12);
+
+        // Ciphertext from Test 4 (HEX): DB D0 C9 CB
+        const uint8_t test4_ct[4] = {0xDB, 0xD0, 0xC9, 0xCB};
+        const uint8_t expected_pt[4] = {'t','e','s','t'};
+        uint8_t rec[4];
+
+        
+        uint8_t ks[4]; ks_bytes(K, IV, ks, 4);
+        // Giải mã
+        grain128_decrypt(K, IV, test4_ct, rec, 4);
+
+        printf("\n--- TEST5: Full decrypt output for Test4 ---\n");
+        printf("Key: %s\n", custom_K_hex);
+        printf("IV : %s\n", custom_IV_hex);
+        printf("Ciphertext (HEX): "); print_hex(test4_ct, 4); printf("\n");
+        printf("Keystream (HEX):  "); print_hex(ks, 4); printf("\n");
+        printf("Recovered PT (HEX): "); print_hex(rec, 4); printf("\n");
+        printf("Recovered PT (ASCII): "); for (int i=0;i<4;i++) putchar((rec[i]>=32&&rec[i]<127)?rec[i]:'.'); printf("\n");
+
+        pass_all &= expect_eq("TEST5 DECRYPT_TEST4", rec, expected_pt, 4);
+        printf("-----------------------------------------\n");
     }
 
 
