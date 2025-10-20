@@ -110,13 +110,6 @@ static void print_binary(const uint8_t* b, size_t n) {
 }
 
 
-// --- helpers riêng cho test ---
-static int hamming(const uint8_t *a, const uint8_t *b, size_t n){
-    int d=0; for (size_t i=0;i<n;i++){ uint8_t x=a[i]^b[i]; d += __builtin_popcount((unsigned)x); } return d;
-}
-static void fill_seq(uint8_t *p, size_t n, uint8_t start, uint8_t step){
-    for (size_t i=0;i<n;i++) p[i] = (uint8_t)(start + step*i);
-}
 static void ks_bytes(const uint8_t K[16], const uint8_t IV[12], uint8_t *out, size_t n){
     grain128_state st; grain128_init(&st,K,IV);
     grain128_keystream_bytes(&st,out,n);
