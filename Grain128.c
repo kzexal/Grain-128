@@ -267,7 +267,44 @@ int main(void){
         pass_all &= expect_eq("TEST5 DECRYPT_TEST4", rec, expected_pt, 4);
         printf("-----------------------------------------\n");
     }
+// ===== Test 6: Xuất 1,000,000 bit keystream ra file (dạng '0' '1') =====
+    {
+        printf("\n--- TEST6: Generating 1,000,000 keystream bits to file ---\n");
+        
+        // Sử dụng Key/IV từ KAT1 (toàn số 0) để làm ví dụ
+        // Bạn có thể đổi sang K/IV custom nếu muốn
+        const uint8_t K[16] = {0}; 
+        const uint8_t IV[12] = {0}; 
+        const char* filename = "keystream_1M_bits.txt";
+        const size_t num_bits = 1048576; // 10^6 bits
 
+        grain128_state st;
+        grain128_init(&st, K, IV); // Khởi tạo state
+
+        FILE *f = fopen(filename, "w"); // Mở file để ghi (write)
+        if (f == NULL) {
+            perror("ERROR: Không thể mở file để ghi");
+            pass_all = 0; // Đánh dấu test thất bại
+        } else {
+            printf("Generating %zu bits to %s... (việc này có thể mất vài giây)\n", num_bits, filename);
+            
+            // Vòng lặp chính: chạy 1,000,000 lần
+            for (size_t i = 0; i < num_bits; i++) {
+                // 1. Lấy bit keystream (z_i)
+                uint8_t z = z_preout(&st); 
+                
+                // 2. Ghi ký tự '1' hoặc '0' vào file
+                fputc((z & 1u) ? '1' : '0', f); 
+                
+                // 3. Clock state để chuẩn bị cho bit tiếp theo
+                clk_gen(&st); 
+            }
+            
+            fclose(f); // Đóng file
+            printf("File generation complete: %s\n", filename);
+        }
+        printf("----------------------------------------------------------\n");
+    }
 
     printf("\n==== SUMMARY: %s ====\n", pass_all?"ALL PASSED":"HAS FAILURES");
     return pass_all ? 0 : 1;
