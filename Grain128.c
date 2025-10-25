@@ -1,14 +1,7 @@
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <assert.h>
-#include <stdlib.h>
-#include <time.h>
+#include "grain128.h"
+#include <string.h> // Dùng cho memset
 
-typedef struct {
-    uint8_t s[128]; // LFSR bits
-    uint8_t b[128]; // NFSR bits
-} grain128_state;
+// === Các hàm tiện ích nội bộ (static) ===
 
 // --- Bit utils: LSB-first within each byte ---
 static inline uint8_t get_bit(const uint8_t *buf, size_t bit_idx){
@@ -30,6 +23,7 @@ static void shift128(uint8_t x[128], uint8_t inbit){
 // --- Feedbacks (Grain-128) ---
 static inline uint8_t L_feedback(const grain128_state* st){
     // 1 + x^32 + x^47 + x^58 + x^90 + x^121 + x^128
+    // s[0] = x^128, s[7]=x^121, s[38]=x^90, s[70]=x^58, s[81]=x^47, s[96]=x^32
     return st->s[0]^st->s[7]^st->s[38]^st->s[70]^st->s[81]^st->s[96];
 }
 static inline uint8_t F_feedback(const grain128_state* st){
@@ -41,272 +35,75 @@ static inline uint8_t F_feedback(const grain128_state* st){
     return v & 1u;
 }
 
-// Keystream bit z_i for Grain-128
-static inline uint8_t z_preout(const grain128_state* st){
-    const uint8_t* b=st->b; const uint8_t* s=st->s;
-    uint8_t v = b[2]^b[15]^b[36]^b[45]^b[64]^b[73]^b[89]^s[93];
-    v ^= (b[12]&b[95]&s[95]) ^ (b[12]&s[8]) ^ (s[13]&s[20]) ^ (b[95]&s[42]) ^ (s[60]&s[79]);
-    return v & 1u;
-}
-
-// --- Clocks ---
+// --- Clocks (Hàm nội bộ) ---
 static inline void clk_init_with_y(grain128_state* st, uint8_t y){
     uint8_t lfb = L_feedback(st) ^ y;
     uint8_t nfb = F_feedback(st) ^ y;
     shift128(st->s, lfb);
     shift128(st->b, nfb);
 }
-static inline void clk_gen(grain128_state* st){
+
+/*
+ * === CÁC HÀM "NỘI BỘ" ĐƯỢC CÔNG KHAI CHO TEST 6 ===
+ * Đã xóa 'static' để linker có thể thấy chúng.
+ */
+
+// Keystream bit z_i for Grain-128
+uint8_t z_preout(const grain128_state* st){
+    const uint8_t* b=st->b; const uint8_t* s=st->s;
+    uint8_t v = b[2]^b[15]^b[36]^b[45]^b[64]^b[73]^b[89]^s[93];
+    v ^= (b[12]&b[95]&s[95]) ^ (b[12]&s[8]) ^ (s[13]&s[20]) ^ (b[95]&s[42]) ^ (s[60]&s[79]);
+    return v & 1u;
+}
+
+// Clock thông thường (dùng khi tạo keystream)
+void clk_gen(grain128_state* st){
     uint8_t lfb = L_feedback(st);
     uint8_t nfb = F_feedback(st);
     shift128(st->s, lfb);
     shift128(st->b, nfb);
 }
 
-// --- API ---
-static void grain128_init(grain128_state* st, const uint8_t key[16], const uint8_t iv[12]){
+
+// === Định nghĩa các hàm API (public) ===
+
+void grain128_init(grain128_state* st, const uint8_t key[16], const uint8_t iv[12]){
     memset(st,0,sizeof(*st));
     uint8_t kbits[128], ivbits[96]; bytes_to_bits_lsb(key,16,kbits); bytes_to_bits_lsb(iv,12,ivbits);
-    for (int i=0;i<128;i++) st->b[i]=kbits[i]&1u;      // NFSR = key
-    for (int i=0;i<96;i++)  st->s[i]=ivbits[i]&1u;     // LFSR = IV || 32*1
-    for (int i=96;i<128;i++) st->s[i]=1u;              // padding 0xFFFFFFFF (32 bits of 1)
+    for (int i=0;i<128;i++) st->b[i]=kbits[i]&1u;     // NFSR = key
+    for (int i=0;i<96;i++)  st->s[i]=ivbits[i]&1u;    // LFSR = IV || 32*1
+    for (int i=96;i<128;i++) st->s[i]=1u;            // padding 0xFFFFFFFF (32 bits of 1)
+    
     // 256 init clocks with y feedback
     for (int t=0;t<256;t++){ uint8_t y=z_preout(st); clk_init_with_y(st,y); }
 }
-static void grain128_keystream_bytes(grain128_state* st, uint8_t *out, size_t nbytes){
+
+void grain128_keystream_bytes(grain128_state* st, uint8_t *out, size_t nbytes){
     memset(out,0,nbytes);
     for (size_t i=0;i<nbytes*8;i++){
         uint8_t z=z_preout(st); set_bit(out,i,z); clk_gen(st);
     }
 }
+
 void grain128_encrypt(const uint8_t key[16], const uint8_t iv[12],
                       const uint8_t *in, uint8_t *out, size_t len){
     grain128_state st; grain128_init(&st,key,iv);
+    
+    // Tối ưu: Tạo keystream theo chunk và XOR
     for (size_t off=0; off<len; ){
-        uint8_t ks[64]; size_t chunk = (len-off>64)?64:(len-off);
+        uint8_t ks[64]; // Kích thước chunk có thể điều chỉnh
+        size_t chunk = (len-off>64)?64:(len-off);
+        
         grain128_keystream_bytes(&st, ks, chunk);
+        
         for (size_t i=0;i<chunk;i++) out[off+i]=in[off+i]^ks[i];
         off+=chunk;
     }
 }
-// decrypt = encrypt
+
 void grain128_decrypt(const uint8_t key[16], const uint8_t iv[12],
                       const uint8_t *in, uint8_t *out, size_t len){
+    // Giải mã của stream cipher giống hệt mã hóa
     grain128_encrypt(key,iv,in,out,len);
-}
-
-// --- simple tests ---
-static void hex_to_bytes(const char*hex,uint8_t*out,size_t n){
-    for (size_t i=0;i<n;i++){ unsigned v; sscanf(hex+2*i,"%2x",&v); out[i]=(uint8_t)v; }
-}
-static void print_hex(const uint8_t*b,size_t n){ for(size_t i=0;i<n;i++) printf("%02X",b[i]); }
-static void print_binary(const uint8_t* b, size_t n) {
-    for (size_t i = 0; i < n; i++) {
-        for (int j = 7; j >= 0; j--) {
-            printf("%d", (b[i] >> j) & 1);
-        }
-        printf(" ");
-    }
-}
-
-
-static void ks_bytes(const uint8_t K[16], const uint8_t IV[12], uint8_t *out, size_t n){
-    grain128_state st; grain128_init(&st,K,IV);
-    grain128_keystream_bytes(&st,out,n);
-}
-static int expect_eq(const char* name, const uint8_t* got, const uint8_t* exp, size_t n){
-    int ok = (memcmp(got,exp,n)==0);
-    printf("%s: %s", name, ok?"OK":"FAIL");
-    if(!ok){ printf(" (got="); print_hex(got,n); printf(", exp="); print_hex(exp,n); printf(")"); }
-    printf("\n"); return ok;
-}
-
-// --- KAT fixtures ---
-static const uint8_t KAT1_K[16] = {0};              // K = 16B zero
-static const uint8_t KAT1_IV[12] = {0};             // IV = 12B zero
-// Keystream 16B đầu tiên (LSB-first/byte)
-static const uint8_t KAT1_KS16[16] =
-    {0xF0,0x9B,0x7B,0xF7,0xD7,0xF6,0xB5,0xC2,0xDE,0x2F,0xFC,0x73,0xAC,0x21,0x39,0x7F};
-
-static const char* KAT2_K_hex = "000102030405060708090A0B0C0D0E0F";
-static const char* KAT2_IV_hex= "000102030405060708090A0B";
-// msg_i = (i*3+1) mod 256, i=0..23
-static const uint8_t KAT2_CT24[24] =
-    {0x8B,0x3D,0xBE,0xA4,0x17,0x57,0xB5,0xFC,0x05,0xB0,0x57,0xFB,
-     0x54,0x4A,0xB0,0x73,0xEC,0xC0,0x65,0xD9,0xC3,0x7D,0x85,0x10};
-
-// --- main test suite ---
-int main(void){
-    int pass_all = 1;
-
-    // ===== Test 0: Roundtrip nhiều độ dài & random =====
-    {
-        srand(12345);
-        for (int t=0;t<8;t++){
-            size_t len = (size_t)(t*31 + 7); // dải độ dài khác nhau
-            uint8_t K[16], IV[12], pt[256], ct[256], rec[256];
-            for (int i=0;i<16;i++) K[i]=(uint8_t)(rand());
-            for (int i=0;i<12;i++) IV[i]=(uint8_t)(rand());
-            for (size_t i=0;i<len;i++) pt[i]=(uint8_t)(rand());
-
-            grain128_encrypt(K,IV,pt,ct,len);
-            grain128_decrypt(K,IV,ct,rec,len);
-            int ok = (memcmp(pt,rec,len)==0);
-            printf("Roundtrip len=%zu: %s\n", len, ok?"OK":"FAIL");
-            pass_all &= ok;
-        }
-    }
-
-    // ===== Test 1: KAT1 — KS 16B đầu cho (K=0, IV=0) =====
-    {
-        uint8_t ks[16];
-        ks_bytes(KAT1_K, KAT1_IV, ks, sizeof(ks));
-        pass_all &= expect_eq("KAT1 KS16", ks, KAT1_KS16, sizeof(ks));
-    }
-
-    // ===== Test 2: KAT2 — Khóa/IV tăng dần (chuỗi hex trong mã nguồn) =====
-    {
-        uint8_t K[16], IV[12];
-        hex_to_bytes(KAT2_K_hex, K, 16);
-        hex_to_bytes(KAT2_IV_hex, IV, 12);
-        uint8_t msg[24]; for (int i=0;i<24;i++) msg[i]=(uint8_t)(i*3+1);
-        uint8_t ct[24];
-        grain128_encrypt(K,IV,msg,ct,24);
-        pass_all &= expect_eq("KAT2 CT24", ct, KAT2_CT24, 24);
-    }
-
-    
-    // ===== Test 3: Keystream cho key/IV theo yêu cầu =====
-    {
-        const char* custom_K_hex = "0123456789abcdef123456789abcdef0";
-        const char* custom_IV_hex = "0123456789abcdef12345678";
-        uint8_t K[16], IV[12];
-        
-        hex_to_bytes(custom_K_hex, K, 16);
-        hex_to_bytes(custom_IV_hex, IV, 12);
-        
-        uint8_t keystream_result[16];
-        ks_bytes(K, IV, keystream_result, sizeof(keystream_result));
-        
-        printf("\n--- Custom Keystream Calculation ---\n");
-        printf("Key:                %s\n", custom_K_hex);
-        printf("IV:                 %s\n", custom_IV_hex);
-        printf("Keystream (16 bytes): ");
-        print_hex(keystream_result, sizeof(keystream_result));
-        printf("\n------------------------------------\n");
-    }
-
-    // ===== Test 4: Mã hóa message "test" =====
-    {
-        const char* custom_K_hex = "0123456789abcdef123456789abcdef0";
-        const char* custom_IV_hex = "0123456789abcdef12345678";
-        uint8_t K[16], IV[12];
-        hex_to_bytes(custom_K_hex, K, 16);
-        hex_to_bytes(custom_IV_hex, IV, 12);
-
-        const char* message_str = "test";
-        size_t message_len = strlen(message_str);
-        uint8_t pt[16]; 
-        uint8_t ct[16];
-        uint8_t ks[16]; // buffer cho keystream
-        memcpy(pt, message_str, message_len);
-
-        // Tạo keystream để hiển thị 
-        ks_bytes(K, IV, ks, message_len);
-
-        // Mã hóa message bằng hàm encrypt 
-        grain128_encrypt(K, IV, pt, ct, message_len);
-
-        printf("\n--- Encrypting 'test' message ---\n");
-        printf("Key:                %s\n", custom_K_hex);
-        printf("IV:                 %s\n", custom_IV_hex);
-        printf("Message:            %s\n", message_str);
-        printf("Keystream (HEX):    ");
-        print_hex(ks, message_len);
-        printf("\n");
-        printf("Keystream (BIN):    ");
-        print_binary(ks, message_len);
-        printf("\n");
-        printf("Message (BIN):      ");
-        print_binary(pt, message_len);
-        printf("\n");
-        printf("Ciphertext (BIN):   ");
-        print_binary(ct, message_len);
-        printf("\n");
-        printf("Ciphertext (HEX):   ");
-        print_hex(ct, message_len);
-        printf("\n-----------------------------------\n");
-    }
-
-    // ===== Test 5: Giải mã ciphertext từ Test 4 và kiểm tra =====
-    {
-        const char* custom_K_hex = "0123456789abcdef123456789abcdef0";
-        const char* custom_IV_hex = "0123456789abcdef12345678";
-        uint8_t K[16], IV[12];
-        hex_to_bytes(custom_K_hex, K, 16);
-        hex_to_bytes(custom_IV_hex, IV, 12);
-
-        // Ciphertext from Test 4 (HEX): DB D0 C9 CB
-        const uint8_t test4_ct[4] = {0xDB, 0xD0, 0xC9, 0xCB};
-        const uint8_t expected_pt[4] = {'t','e','s','t'};
-        uint8_t rec[4];
-
-        
-        uint8_t ks[4]; ks_bytes(K, IV, ks, 4);
-        // Giải mã
-        grain128_decrypt(K, IV, test4_ct, rec, 4);
-
-        printf("\n--- TEST5: Full decrypt output for Test4 ---\n");
-        printf("Key: %s\n", custom_K_hex);
-        printf("IV : %s\n", custom_IV_hex);
-        printf("Ciphertext (HEX): "); print_hex(test4_ct, 4); printf("\n");
-        printf("Keystream (HEX):  "); print_hex(ks, 4); printf("\n");
-        printf("Recovered PT (HEX): "); print_hex(rec, 4); printf("\n");
-        printf("Recovered PT (ASCII): "); for (int i=0;i<4;i++) putchar((rec[i]>=32&&rec[i]<127)?rec[i]:'.'); printf("\n");
-
-        pass_all &= expect_eq("TEST5 DECRYPT_TEST4", rec, expected_pt, 4);
-        printf("-----------------------------------------\n");
-    }
-// ===== Test 6: Xuất 1,000,000 bit keystream ra file (dạng '0' '1') =====
-    {
-        printf("\n--- TEST6: Generating 1,000,000 keystream bits to file ---\n");
-        
-        // Sử dụng Key/IV từ KAT1 (toàn số 0) để làm ví dụ
-        // Bạn có thể đổi sang K/IV custom nếu muốn
-        const uint8_t K[16] = {0}; 
-        const uint8_t IV[12] = {0}; 
-        const char* filename = "keystream_1M_bits.txt";
-        const size_t num_bits = 1048576; // 10^6 bits
-
-        grain128_state st;
-        grain128_init(&st, K, IV); // Khởi tạo state
-
-        FILE *f = fopen(filename, "w"); // Mở file để ghi (write)
-        if (f == NULL) {
-            perror("ERROR: Không thể mở file để ghi");
-            pass_all = 0; // Đánh dấu test thất bại
-        } else {
-            printf("Generating %zu bits to %s... (việc này có thể mất vài giây)\n", num_bits, filename);
-            
-            // Vòng lặp chính: chạy 1,000,000 lần
-            for (size_t i = 0; i < num_bits; i++) {
-                // 1. Lấy bit keystream (z_i)
-                uint8_t z = z_preout(&st); 
-                
-                // 2. Ghi ký tự '1' hoặc '0' vào file
-                fputc((z & 1u) ? '1' : '0', f); 
-                
-                // 3. Clock state để chuẩn bị cho bit tiếp theo
-                clk_gen(&st); 
-            }
-            
-            fclose(f); // Đóng file
-            printf("File generation complete: %s\n", filename);
-        }
-        printf("----------------------------------------------------------\n");
-    }
-
-    printf("\n==== SUMMARY: %s ====\n", pass_all?"ALL PASSED":"HAS FAILURES");
-    return pass_all ? 0 : 1;
 }
 
