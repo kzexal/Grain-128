@@ -187,14 +187,14 @@ int main(void){
     }
 // ===== Test 6: Xuất 1,000,000 bit keystream ra file (dạng '0' '1') =====
     {
-        printf("\n--- TEST6: Generating 1,000,000 keystream bits to file ---\n");
+        printf("\n--- TEST6: Xuat 1,000,000 keystream bits vao file ---\n");
         
-        // Sử dụng Key/IV từ KAT1 (toàn số 0) để làm ví dụ
+        // Sử dụng Key/IV từ KAT1 
         const uint8_t K[16] = {0}; 
         const uint8_t IV[12] = {0}; 
         const char* filename = "keystream_1M_bits.txt";
-        const size_t num_bits = 1000000; // 1 triệu bits
-        // const size_t num_bits = 1048576; // 1 Mi-bit
+        const size_t num_bits = 1000000; 
+        
 
         grain128_state st;
         grain128_init(&st, K, IV); // Khởi tạo state
@@ -204,7 +204,7 @@ int main(void){
             perror("ERROR: Không thể mở file để ghi");
             pass_all = 0; // Đánh dấu test thất bại
         } else {
-            printf("Generating %zu bits to %s... (việc này có thể mất vài giây)\n", num_bits, filename);
+            printf("Generating %zu bits to %s \n", num_bits, filename);
             
             // Tối ưu: Ghi vào buffer trước khi flush ra file
             char buffer[4096];
@@ -234,7 +234,7 @@ int main(void){
             }
             
             fclose(f); // Đóng file
-            printf("File generation complete: %s\n", filename);
+            printf("Xuat file thanh cong: %s\n", filename);
         }
         printf("----------------------------------------------------------\n");
     }
