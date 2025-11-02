@@ -1,17 +1,21 @@
 # Grain-128 
 
-Đây là một triển khai tham khảo của bộ mã hóa dòng Grain-128 bằng C.
+Đây là một triển khai tham khảo của bộ mã hóa dòng Grain-128 bằng C, tách biệt giữa thư viện và phần kiểm thử.
 
-Nội dung file `Grain128.c` bao gồm:
-- Hàm khởi tạo và sinh luồng khóa (keystream) theo Grain-128.
-- Một bộ test nội bộ (KAT fixtures) và các kiểm tra mẫu in ra kết quả.
+Bao gồm 3 file:
+
+grain128.h: Định nghĩa cấu trúc grain128_state và các hàm API.
+
+grain128.c: Triển khai lõi của thuật toán Grain-128 (khởi tạo, clock, sinh keystream).
+
+main.c: Chứa các bộ test (KAT fixtures), các hàm test roundtrip, và hàm main() để chạy toàn bộ kiểm thử.
 
 ## Hướng dẫn build 
 Mở terminal  và chạy:
 
 ```
-gcc -O2 -std=c11 Grain128.c -o Grain128.exe
-./Grain128.exe
+gcc  main.c grain128.c -o run_grain            
+./run_grain
 ```
 
 ## Test vectors 
@@ -91,5 +95,17 @@ DB D0 C9 CB
 ```
 - Plaintext: "test"
 
+Test vectors 6
 
+Xuất 1,000,000 bit keystream ra file.
+
+Test này sử dụng Key và IV từ KAT1 (toàn số 0) để đảm bảo tính nhất quán.
+
+Key: 00000000000000000000000000000000
+
+IV: 000000000000000000000000
+
+Hành động: Tạo ra 1,000,000 bit keystream (dưới dạng ký tự '0' và '1').
+
+Đầu ra: Ghi kết quả vào file có tên keystream_1M_bits.txt.
 

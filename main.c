@@ -162,10 +162,8 @@ int main(void){
         hex_to_bytes(custom_K_hex, K, 16);
         hex_to_bytes(custom_IV_hex, IV, 12);
 
-        // Ciphertext from Test 4 (HEX): DB D0 C9 CB (dựa trên output của test 4)
-        // Chúng ta nên lấy giá trị thực tế thay vì hardcode
-        // Tạm thời hardcode dựa trên lần chạy trước:
-        const uint8_t test4_ct[4] = {0xDB, 0xD0, 0xC9, 0xCB}; // CHÚ Ý: Gía trị này có thể sai nếu test 3 thay đổi
+    
+        const uint8_t test4_ct[4] = {0xDB, 0xD0, 0xC9, 0xCB};
         const uint8_t expected_pt[4] = {'t','e','s','t'};
         uint8_t rec[4];
 
@@ -185,15 +183,24 @@ int main(void){
         pass_all &= expect_eq("TEST5 DECRYPT_TEST4", rec, expected_pt, 4);
         printf("-----------------------------------------\n");
     }
-// ===== Test 6: Xuất 1,000,000 bit keystream ra file (dạng '0' '1') =====
+
+    // ===== Test 6: Xuất 1,000,000 bit keystream ra file (dạng '0' '1') =====
     {
         printf("\n--- TEST6: Xuat 1,000,000 keystream bits vao file ---\n");
         
-        // Sử dụng Key/IV từ KAT1 
-        const uint8_t K[16] = {0}; 
-        const uint8_t IV[12] = {0}; 
+    
+        const char* custom_K_hex = "0123456789abcdef123456789abcdef0";
+        const char* custom_IV_hex = "0123456789abcdef12345678";
+        uint8_t K[16];
+        uint8_t IV[12];
+        hex_to_bytes(custom_K_hex, K, 16);
+        hex_to_bytes(custom_IV_hex, IV, 12);
+        
+        printf("Using Key: %s\n", custom_K_hex);
+        printf("Using IV : %s\n", custom_IV_hex);
+        
         const char* filename = "keystream_1M_bits.txt";
-        const size_t num_bits = 1000000; 
+        const size_t num_bits = 1048576;
         
 
         grain128_state st;

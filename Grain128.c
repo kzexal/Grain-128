@@ -43,10 +43,6 @@ static inline void clk_init_with_y(grain128_state* st, uint8_t y){
     shift128(st->b, nfb);
 }
 
-/*
- * === CÁC HÀM "NỘI BỘ" ĐƯỢC CÔNG KHAI CHO TEST 6 ===
- * Đã xóa 'static' để linker có thể thấy chúng.
- */
 
 // Keystream bit z_i for Grain-128
 uint8_t z_preout(const grain128_state* st){
